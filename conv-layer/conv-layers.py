@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, downsample=None):
@@ -128,8 +129,54 @@ class InceptionModule(nn.Module):
         return out
     
     
+class DenseLayer(nn.Module):
+    def __init__(self, in_channels, growth_rate, bn_size=4, drop_rate=0.0):
+        super(DenseLayer, self).__init__()
+
+        inter_channels = bn_size * growth_rate
+
+        self.norm1 = nn.BatchNorm2d(in_channels)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.conv1 = nn.Conv2d(in_channels, inter_channels, kernel_size=1, bias=False)
+
+        self.norm2 = nn.BatchNorm2d(inter_channels)
+        self.relu2 = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(inter_channels, growth_rate, kernel_size=3, padding=1, bias=False)
+
+        self.drop_rate = drop_rate
+
+    def forward(self, x):
+
+        out = self.norm1(x)
+        out = self.relu1(out)
+        out = self.conv1(out)
+
+        out = self.norm2(out)
+        out = self.relu2(out)
+        out = self.conv2(out)
+
+        if self.drop_rate > 0:
+            out = F.dropout(out, p=self.drop_rate, training=self.training)
+
+        return torch.cat([x, out], dim=1)
+
+
 class DenseBlock(nn.Module):
-    ...
+    def __init__(self, num_layers, in_channels, growth_rate, bn_size=4, drop_rate=0.0):
+        super(DenseBlock, self).__init__()
+        self.layers = nn.ModuleList()
+        current_channels = in_channels
+        for i in range(num_layers):
+            layer = DenseLayer(current_channels, growth_rate, bn_size, drop_rate)
+            self.layers.append(layer)
+            current_channels += growth_rate
+
+        self.out_channels = current_channels
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
     
     
 class ResNeXtBlock(nn.Module):
