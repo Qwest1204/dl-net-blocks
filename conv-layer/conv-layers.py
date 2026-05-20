@@ -256,13 +256,51 @@ class FireModule(nn.Module):
         return torch.cat([out1, out3], dim=1)
 
 
-class NonLocalBlock(nn.Module):
-    ...
-
-
 class DepthwiseSeparableConv(nn.Module):
-    ...
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=None, dilation=1, bias=False):
+        super(DepthwiseSeparableConv, self).__init__()
+        
+        if padding is None:
+            padding = kernel_size // 2 * dilation
+
+        self.depthwise = nn.Conv2d(
+            in_channels, in_channels, kernel_size=kernel_size, stride=stride,
+            padding=padding, dilation=dilation, groups=in_channels, bias=bias
+        )
+        self.bn_dw = nn.BatchNorm2d(in_channels)
+
+        self.pointwise = nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=bias)
+        self.bn_pw = nn.BatchNorm2d(out_channels)
+
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+
+        x = self.depthwise(x)
+        x = self.bn_dw(x)
+        x = self.relu(x)
+
+        x = self.pointwise(x)
+        x = self.bn_pw(x)
+        x = self.relu(x)
+        return x
 
     
 class AtrousConv(nn.Module):
-    ...
+    def __init__(self, in_channels, out_channels, kernel_size=3, dilation=2, stride=1, bias=False):
+        super(AtrousConv, self).__init__()
+        
+        padding = (kernel_size - 1) * dilation // 2
+
+        self.conv = nn.Conv2d(
+            in_channels, out_channels, kernel_size=kernel_size,
+            stride=stride, padding=padding, dilation=dilation, bias=bias
+        )
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        return x
