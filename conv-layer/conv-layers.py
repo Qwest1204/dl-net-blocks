@@ -180,11 +180,80 @@ class DenseBlock(nn.Module):
     
     
 class ResNeXtBlock(nn.Module):
-    ...
+    expansion = 2 #4
+
+    def __init__(self, in_channels, internal_channels, stride=1, cardinality=32,
+                 base_width=4, downsample=None):
+        super(ResNeXtBlock, self).__init__()
+        
+        out_channels = internal_channels * self.expansion
+        D = cardinality * base_width
+
+        self.conv1 = nn.Conv2d(in_channels, D, kernel_size=1, stride=1, bias=False)
+        self.bn1   = nn.BatchNorm2d(D)
+
+        self.conv2 = nn.Conv2d(D, D, kernel_size=3, stride=stride, padding=1,
+                               groups=cardinality, bias=False)
+        self.bn2   = nn.BatchNorm2d(D)
+
+        self.conv3 = nn.Conv2d(D, out_channels, kernel_size=1, stride=1, bias=False)
+        self.bn3   = nn.BatchNorm2d(out_channels)
+
+        self.downsample = downsample
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out = self.bn3(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity
+        out = self.relu(out)
+
+        return out
     
     
 class FireModule(nn.Module):
-    ...
+    def __init__(self, in_channels, squeeze_channels, expand1x1_channels, expand3x3_channels):
+        super(FireModule, self).__init__()
+        
+        self.squeeze = nn.Sequential(
+            nn.Conv2d(in_channels, squeeze_channels, kernel_size=1),
+            nn.BatchNorm2d(squeeze_channels),
+            nn.ReLU(inplace=True)
+        )
+
+        self.expand1x1 = nn.Sequential(
+            nn.Conv2d(squeeze_channels, expand1x1_channels, kernel_size=1),
+            nn.BatchNorm2d(expand1x1_channels),
+            nn.ReLU(inplace=True)
+        )
+
+        self.expand3x3 = nn.Sequential(
+            nn.Conv2d(squeeze_channels, expand3x3_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(expand3x3_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        
+        squeezed = self.squeeze(x)
+        out1 = self.expand1x1(squeezed)
+        out3 = self.expand3x3(squeezed)
+        
+        return torch.cat([out1, out3], dim=1)
 
 
 class NonLocalBlock(nn.Module):
