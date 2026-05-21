@@ -270,8 +270,51 @@ class DeformableAttention(nn.Module):
     
 
 class AttentionOnAttention(nn.Module):
-    ...
-    
+    def __init__(self, d_model, num_heads, dropout=0.0):
+        super().__init__()
+        assert d_model % num_heads == 0, "d_model должно делиться на num_heads"
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.head_dim = d_model // num_heads
+
+        self.q_proj = nn.Linear(d_model, d_model)
+        self.k_proj = nn.Linear(d_model, d_model)
+        self.v_proj = nn.Linear(d_model, d_model)
+
+        self.info_proj = nn.Linear(d_model, d_model)
+
+        self.gate_proj = nn.Linear(2 * d_model, d_model)
+
+        self.out_proj = nn.Linear(d_model, d_model)
+
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, query, key, value, attn_mask=None, is_causal=False):
+        
+        B, S, _ = query.shape
+
+        q = self.q_proj(query).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(key).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(value).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+
+        attn_out = F.scaled_dot_product_attention(
+            q, k, v,
+            attn_mask=attn_mask,
+            dropout_p=self.dropout.p if self.training else 0.0,
+            is_causal=is_causal
+        )
+
+        C = attn_out.transpose(1, 2).contiguous().view(B, S, self.d_model)
+
+        I = self.info_proj(query)
+
+        gate_input = torch.cat([C, I], dim=-1)
+        G = torch.sigmoid(self.gate_proj(gate_input))
+
+        AoA = G * C + (1 - G) * I
+
+        return self.out_proj(AoA)
+
     
 class CrossAttentionWithMemory(nn.Module):
     ...
